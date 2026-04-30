@@ -59,6 +59,7 @@ The whole project is structured to be reproducible from scratch: every parquet a
 * **Adding a regime classifier flips the sign of the Sharpe.** A simple "ranging vs trending" filter (|60-day cumulative PC2| ≤ 30bp = ranging) restricts trading to 17% of days but takes Sharpe to +0.06. This is still noise-level, but it isolates the one filter that matters: **when** to trade is a bigger lever than **how**.
 * **The theoretical Sharpe ceiling is ~16** (perfect-foresight projection onto PC2). Industry-grade systematic strategies typically realize 0.5-1.5; the mapping from hit rate to Sharpe shows that just 52-54% directional accuracy on a daily PC2 signal would already produce 0.5-1.0.
 * **PC1 reacts to macro releases by ~1.5x.** PC1 std on FOMC / CPI / NFP release days is **22.9 bp vs 14.9 bp** on non-release days. In joint regression, the FOMC dummy is the only feature that survives (β = **−7.24 bp on PC1, p < 0.001**) — confirming PC1 as the macro-policy factor. CPI/NFP proxy surprises don't reach significance because the free-data substitute (deviation from rolling mean) doesn't capture true consensus surprise; comparable studies with Bloomberg consensus typically reach R² of 5-20%.
+* **PCA-based immunization eliminates 96% of P&L variance.** A $100M long-30Y portfolio has daily P&L std of $1.66M unhedged. Hedging PC1 with a 10Y instrument cuts that 85%; adding a 2Y to hedge PC2 gets to 90%; adding 3M and 20Y to hedge PC3 reaches **96.03%** variance reduction — exactly the 96.2% explained-variance budget the PCA started with. The same PCA model that couldn't be **predicted off** in Notebooks 06-08 can be **hedged off** cleanly, which is the asymmetry the project is built around.
 
 ---
 
@@ -178,6 +179,8 @@ yield-curve-pca/
 | 07 | `07_loss_analysis_and_improvements.ipynb`    | Loss attribution + five improvement variants                            |
 | 08 | `08_strategy_ceiling_and_walkthrough.ipynb`   | Theoretical Sharpe ceiling + entry/exit walkthrough                     |
 | 09 | `09_macro_factor_regression.ipynb`            | Regress PC scores on CPI/NFP/FOMC                                        |
+| 10 | `10_pca_immunization.ipynb`                   | DV01, portfolio, PC factor exposures, P&L decomposition (Phase 1)        |
+| 11 | `11_immunization_backtest.ipynb`              | Hedge construction + 4-variant backtest, 96% variance reduction (Phase 2) |
 
 ---
 
@@ -232,6 +235,7 @@ For a project-specific reference of the financial and statistical terms used her
 * **Regime classifier だけが Sharpe をプラス(+0.06)に**。「いつトレードするか」が「どうトレードするか」より重要。
 * **Sharpe の理論上限は約 16**(perfect foresight)。Production レベルは 0.5-1.0、これに必要な hit rate は約 52-54%。
 * **PC1 はマクロ発表に 1.5 倍反応**: PC1 std がリリース日 22.9 vs 通常日 14.9 bp。Joint regression で **FOMC ダミーのみ有意**(β = -7.24 bp、p<0.001)。CPI/NFP の代理サプライズは無料データの限界で R² < 1%(本物のコンセンサス予想なら 5-20% の見込み)。
+* **PCA イミュナイゼーションで P&L 分散を 96% 削減**: $100M 30Y ロングのポートフォリオに対して、PC1+PC2+PC3 を {3M, 5Y, 20Y} でヘッジ → 日次 std $1.66M → $0.33M(96.03% 削減)。PCA で予測しようとして負けた(Sharpe -0.38)同じ3因子が、ヘッジに使うと劇的に効くという**非対称性**が本プロジェクトの中核メッセージ。
 
 ### ハイライトのストーリー(面接5分)
 

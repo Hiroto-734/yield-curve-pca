@@ -108,7 +108,60 @@ The notebook is therefore a quantification of **what is and isn't explainable fr
 
 ---
 
-## 5. Five-minute spoken summary
+## 5. PCA-based portfolio immunization (Notebooks 10-11)
+
+The strategy notebooks (06-09) showed PCA can't be predicted off — the directional bet on PC2 lost money. Notebooks 10-11 turn the same factors into a **risk management tool** instead, which is what Litterman & Scheinkman's original paper proposed them for. The contrast is the project's clearest finding.
+
+### 5.1 Setup
+
+A vanilla long-30Y portfolio: $100M notional, modified duration ~30 years, daily P&L std of **$1.66M** (≈ $26M annualized) when unhedged. The hedge variants:
+
+| Variant | Hedge instruments | PCs neutralized |
+|---------|--------------------|-----------------|
+| Unhedged | — | — |
+| PC1 hedge | 10Y | PC1 (Level) |
+| PC1+PC2 hedge | 2Y, 10Y | PC1, PC2 |
+| PC1+PC2+PC3 hedge | **3M, 5Y, 20Y** | PC1, PC2, PC3 |
+
+The 3-PC hedge deliberately excludes 30Y as an instrument: with the original portfolio also being 30Y, including it lets the linear system collapse to "just short the original," which is correct but uninformative. Choosing instruments at distinct maturities forces a real factor-neutralizing combination.
+
+### 5.2 Headline result: 96% variance reduction
+
+| Variant | Daily std | % of unhedged variance | Variance reduction |
+|---------|-----------|------------------------|---------------------|
+| Unhedged | $1.66M | 100.00% | — |
+| PC1 hedged | $0.64M | 14.99% | **85.01%** |
+| PC1+PC2 hedged | $0.53M | 10.29% | **89.71%** |
+| **PC1+PC2+PC3 hedged** | **$0.33M** | **3.97%** | **96.03%** |
+
+The residual 3.97% closely matches the PCA's 3.8% unexplained variance (1 − 96.2%) — exactly what the math predicts. Cumulative-P&L plots show the unhedged portfolio drifting through nine-figure swings during the 2022-2024 hiking cycle, while the fully-hedged portfolio sits visibly flat.
+
+### 5.3 The instrument-selection finding
+
+A genuinely surprising side-result: the same "hedge PC1+PC2+PC3" task with different instrument choices gives meaningfully different residual variance:
+
+| 3-PC hedge instruments | PC4-10 residual variance | Var reduction |
+|------------------------|---------------------------|----------------|
+| {2Y, 5Y, 10Y} | 3.4 × 10¹¹ | 87.8% |
+| {3M, 5Y, 10Y} | 2.5 × 10¹¹ | — |
+| {3M, 2Y, 10Y} | 3.1 × 10¹¹ | — |
+| {2Y, 7Y, 20Y} | 1.2 × 10¹¹ | — |
+| **{3M, 5Y, 20Y}** | **1.1 × 10¹¹** | **96.0%** |
+
+Same number of factors hedged, same factors zeroed, but a 3× difference in residual variance depending on which maturities span the hedge. **Picking the hedge basket is a sub-problem in its own right** — what real risk desks optimize over, not just "how many factors to neutralize." A simple first principle that emerged: spread the instruments across the curve (one short, one belly, one long) rather than clustering them in the belly.
+
+### 5.4 The asymmetry result
+
+The same PCA model that lost money trying to predict PC2 (Notebook 06: Sharpe -0.38) eliminates 96% of variance when used to hedge factor exposures (Notebook 11). Same factors, opposite outcomes — this is the project's headline asymmetry:
+
+- **Prediction needs direction** (which way does PC2 go tomorrow?) → can't be answered → naive strategies lose
+- **Hedging needs structure** (how does the curve move when it moves?) → answered by stable loadings → factor-neutralization works
+
+This matches the message of Litterman & Scheinkman 1991 — its title is "Common Factors Affecting Bond *Returns*," not "Predicting Bond Returns" — and is the cleanest summary of where PCA earns its keep in fixed income.
+
+---
+
+## 6. Five-minute spoken summary
 
 > I applied PCA to daily changes in the US Treasury yield curve from 2020 through April 2026 — ten maturities from 3M to 30Y. The top three components explain 96.2% of variance and recover the textbook Level / Slope / Curvature factor structure.
 >
@@ -118,11 +171,13 @@ The notebook is therefore a quantification of **what is and isn't explainable fr
 >
 > Three case studies reinforce the broader lesson that surface labels mislead without context: the COVID emergency cut produced a Bull-Flattener instead of a Bull-Steepener (front end pinned at zero, flight-to-safety in the long end); the 75bp hike of June 2022 produced a Bull-Steepener instead of a Bear-Flattener (WSJ leak two days earlier had priced it in); the first cut of September 2024 produced a pure Steepener despite cutting (Powell's "insurance cut" framing removed recession premium from the long end). The market reacts to the difference between action and expectation, not to action alone.
 >
-> The whole project is reproducible — installable package, 27 unit tests, every parquet artifact and figure regenerable from the numbered notebooks.
+> Pivoting from prediction to risk management on the same factors, I built a PCA-based immunization for a $100M long-30Y portfolio. Hedging PC1 alone with a 10Y bond eliminates 85% of the daily P&L variance; adding a 2Y to neutralize PC2 takes it to 90%; adding 3M and 20Y to neutralize PC3 takes it to **96%** — exactly the explained-variance budget that the PCA started with. The same factors that couldn't be predicted off can be hedged off cleanly, which is the message Litterman & Scheinkman put in the paper title: "Common Factors Affecting Bond *Returns*," not "Predicting Bond Returns."
+>
+> The whole project is reproducible — installable package, 52 unit tests passing in CI, every parquet artifact and figure regenerable from the numbered notebooks.
 
 ---
 
-## 6. Limitations and what I'd do next
+## 7. Limitations and what I'd do next
 
 * **Macro regression**: needs Bloomberg/Refinitiv consensus surprise data to do justice to the question.
 * **Strategy refinement**: the regime classifier is threshold-based. An HMM or a small classifier using cross-asset features (VIX, credit spreads, equity momentum) is the natural next step. Realistic expectation: maybe 0.1-0.3 of additional Sharpe.

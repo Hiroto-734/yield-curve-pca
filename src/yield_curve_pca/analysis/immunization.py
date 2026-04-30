@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from ..utils.config import MATURITY_YEARS
@@ -178,6 +179,106 @@ def pc_exposures(portfolio: Portfolio, pca: YieldCurvePCA) -> pd.Series:
         index=pca.loadings.index,
         name="pc_exposure_dollars_per_unit_pc",
     )
+
+
+# --------------------------------------------------------------------- #
+# Hedge construction                                                    #
+# --------------------------------------------------------------------- #
+
+
+def solve_hedge(
+    portfolio: Portfolio,
+    pca: YieldCurvePCA,
+    hedge_maturities: list[str],
+    yields: pd.Series,
+    pcs_to_hedge: list[str] | None = None,
+) -> dict[str, float]:
+    """Find hedge notionals that neutralize a chosen subset of PC exposures.
+
+    Sets up a linear system
+
+        E @ n  =  -p_exp
+
+    where ``p_exp`` is the portfolio's exposure to the PCs we want to
+    hedge, ``n`` is the (unknown) vector of hedge notionals in dollars,
+    and ``E[k, j]`` is the exposure of $1 of hedge instrument ``j`` to
+    ``PC_k``. The number of hedge instruments must equal the number of
+    PCs to hedge so the system is square; otherwise it would be either
+    over- or under-determined.
+
+    Args:
+        portfolio: The portfolio to hedge.
+        pca: The fitted ``YieldCurvePCA``.
+        hedge_maturities: Maturity labels of the hedge instruments
+            (must equal in length to ``pcs_to_hedge``).
+        yields: Current yield curve, used to price the hedge instruments
+            (DV01 depends on yield).
+        pcs_to_hedge: Subset of PC names to neutralize. Defaults to all
+            of pca's components.
+
+    Returns:
+        Dict ``{maturity_label: hedge_notional_dollars}`` suitable for
+        feeding into ``Portfolio.from_holdings``. Negative notionals
+        mean short positions (the typical case for hedging a long
+        bond portfolio).
+
+    Raises:
+        ValueError: if the dimensions don't match or the hedge matrix
+            is singular (e.g. two hedge instruments with collinear PC
+            exposures).
+    """
+    if pcs_to_hedge is None:
+        pcs_to_hedge = list(pca.loadings.index)
+
+    if len(hedge_maturities) != len(pcs_to_hedge):
+        raise ValueError(
+            f"Number of hedge instruments ({len(hedge_maturities)}) must "
+            f"match number of PCs to hedge ({len(pcs_to_hedge)})."
+        )
+
+    # Portfolio exposures to the targeted PCs
+    p_exp = pc_exposures(portfolio, pca).loc[pcs_to_hedge]
+
+    # exposure_matrix[k, j] = exposure of $1 of hedge instrument j to PC k
+    n = len(pcs_to_hedge)
+    exposure_matrix = np.zeros((n, n))
+    for j, mat in enumerate(hedge_maturities):
+        unit_dv01 = Bond(mat, 1.0, float(yields[mat])).dv01
+        for k, pc in enumerate(pcs_to_hedge):
+            exposure_matrix[k, j] = unit_dv01 * pca.loadings.loc[pc, mat]
+
+    try:
+        notionals = np.linalg.solve(exposure_matrix, -p_exp.values)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError(
+            "Hedge matrix is singular — chosen instruments don't span the "
+            "targeted PC subspace. Pick instruments at more spread maturities."
+        ) from exc
+
+    return dict(zip(hedge_maturities, notionals.tolist(), strict=True))
+
+
+def hedged_portfolio(
+    portfolio: Portfolio,
+    hedge: dict[str, float],
+    yields: pd.Series,
+) -> Portfolio:
+    """Return a new ``Portfolio`` = original + hedge bonds.
+
+    Args:
+        portfolio: Original portfolio.
+        hedge: Output of ``solve_hedge`` (``{maturity_label: notional}``).
+        yields: Yield curve to price the hedge bonds at.
+
+    Returns:
+        ``Portfolio`` containing the original bonds plus one ``Bond`` per
+        hedge entry.
+    """
+    hedge_bonds = [
+        Bond(maturity_label=mat, notional=notional, yield_pct=float(yields[mat]))
+        for mat, notional in hedge.items()
+    ]
+    return Portfolio(bonds=list(portfolio.bonds) + hedge_bonds)
 
 
 # --------------------------------------------------------------------- #

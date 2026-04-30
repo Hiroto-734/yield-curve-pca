@@ -11,7 +11,9 @@ from yield_curve_pca.analysis.immunization import (
     Portfolio,
     daily_pnl_direct,
     daily_pnl_via_pcs,
+    hedged_portfolio,
     pc_exposures,
+    solve_hedge,
 )
 from yield_curve_pca.analysis.pca_analyzer import YieldCurvePCA
 from yield_curve_pca.utils.config import MATURITY_YEARS
@@ -191,3 +193,94 @@ def test_short_portfolio_pnl_signs_flip() -> None:
     pnl_short = daily_pnl_direct(short_p, changes)
 
     np.testing.assert_allclose(pnl_long.values, -pnl_short.values, atol=1e-9)
+
+
+# --------------------------------------------------------------------- #
+# Hedge construction                                                    #
+# --------------------------------------------------------------------- #
+
+
+def test_solve_hedge_dimension_mismatch_raises(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """1 hedge instrument vs 2 PCs to hedge → ValueError."""
+    pca = YieldCurvePCA(n_components=3).fit(changes_bp)
+    p = Portfolio.from_holdings({"30Y": 100_000_000}, yields_clean.iloc[-1])
+    with pytest.raises(ValueError, match="must match"):
+        solve_hedge(
+            p, pca, ["10Y"], yields_clean.iloc[-1], ["PC1", "PC2"]
+        )
+
+
+def test_solve_hedge_neutralizes_targeted_pc_exposures(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """After hedging PC1+PC2+PC3, the combined exposures should all be ≈ 0."""
+    pca = YieldCurvePCA(n_components=3).fit(changes_bp)
+    yields = yields_clean.iloc[-1]
+    p = Portfolio.from_holdings({"30Y": 100_000_000}, yields)
+
+    hedge = solve_hedge(
+        p, pca, ["2Y", "10Y", "30Y"], yields, ["PC1", "PC2", "PC3"]
+    )
+    combined = hedged_portfolio(p, hedge, yields)
+    new_exp = pc_exposures(combined, pca)
+
+    # Every targeted exposure should be zero to machine precision.
+    np.testing.assert_allclose(new_exp.values, 0.0, atol=1e-6)
+
+
+def test_solve_hedge_long_portfolio_gets_short_30y_in_full_hedge(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """A long-30Y portfolio hedged with 30Y as one instrument should see
+    its 30Y hedge come out negative (i.e. short 30Y)."""
+    pca = YieldCurvePCA(n_components=3).fit(changes_bp)
+    yields = yields_clean.iloc[-1]
+    p = Portfolio.from_holdings({"30Y": 100_000_000}, yields)
+
+    hedge = solve_hedge(
+        p, pca, ["2Y", "10Y", "30Y"], yields, ["PC1", "PC2", "PC3"]
+    )
+    assert hedge["30Y"] < 0
+
+
+def test_solve_hedge_partial_neutralization_leaves_other_exposures(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """Hedging only PC1 should leave PC2/PC3 exposures non-zero."""
+    pca = YieldCurvePCA(n_components=3).fit(changes_bp)
+    yields = yields_clean.iloc[-1]
+    p = Portfolio.from_holdings({"30Y": 100_000_000}, yields)
+
+    hedge = solve_hedge(p, pca, ["10Y"], yields, ["PC1"])
+    combined = hedged_portfolio(p, hedge, yields)
+    new_exp = pc_exposures(combined, pca)
+
+    # PC1 ≈ 0 by construction
+    assert abs(new_exp["PC1"]) < 1e-6
+    # PC2 and PC3 should remain non-trivial
+    assert abs(new_exp["PC2"]) > 1.0
+    assert abs(new_exp["PC3"]) > 1.0
+
+
+def test_hedged_portfolio_combines_bonds(
+    yields_clean: pd.DataFrame,
+) -> None:
+    """``hedged_portfolio`` should produce a Portfolio with original + hedge bonds."""
+    yields = yields_clean.iloc[-1]
+    p = Portfolio.from_holdings({"30Y": 100_000_000}, yields)
+    hedge = {"10Y": -50_000_000}
+
+    combined = hedged_portfolio(p, hedge, yields)
+    assert len(combined.bonds) == 2
+    # Original bond is still in there
+    assert any(
+        b.maturity_label == "30Y" and b.notional == 100_000_000
+        for b in combined.bonds
+    )
+    # Hedge bond is added with the right notional
+    assert any(
+        b.maturity_label == "10Y" and b.notional == -50_000_000
+        for b in combined.bonds
+    )
