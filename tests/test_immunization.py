@@ -14,6 +14,7 @@ from yield_curve_pca.analysis.immunization import (
     hedged_portfolio,
     pc_exposures,
     solve_hedge,
+    walk_forward_hedge,
 )
 from yield_curve_pca.analysis.pca_analyzer import YieldCurvePCA
 from yield_curve_pca.utils.config import MATURITY_YEARS
@@ -284,3 +285,101 @@ def test_hedged_portfolio_combines_bonds(
         b.maturity_label == "10Y" and b.notional == -50_000_000
         for b in combined.bonds
     )
+
+
+# --------------------------------------------------------------------- #
+# Walk-forward                                                          #
+# --------------------------------------------------------------------- #
+
+
+def test_walk_forward_returns_expected_keys(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """The walk-forward function returns a dict with the documented keys."""
+    out = walk_forward_hedge(
+        portfolio_holdings={"30Y": 100_000_000},
+        yields=yields_clean,
+        changes_bp=changes_bp,
+        hedge_maturities=["3M", "5Y", "20Y"],
+        pcs_to_hedge=["PC1", "PC2", "PC3"],
+        window_days=252,
+        rebalance_freq="ME",
+    )
+    assert set(out) == {"pnl", "hedge_history", "rebalance_dates"}
+    assert isinstance(out["pnl"], pd.Series)
+    assert isinstance(out["hedge_history"], pd.DataFrame)
+
+
+def test_walk_forward_no_lookahead(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """Smashing future yield changes must not affect hedges constructed earlier.
+
+    We perturb ``changes_bp`` past a midpoint date and confirm the
+    walk-forward hedge ratios at all rebalance dates *before* the
+    midpoint are unchanged. This is the canonical look-ahead-bias check.
+    """
+    common_kwargs = dict(
+        portfolio_holdings={"30Y": 100_000_000},
+        yields=yields_clean,
+        hedge_maturities=["3M", "5Y", "20Y"],
+        pcs_to_hedge=["PC1", "PC2", "PC3"],
+        window_days=252,
+        rebalance_freq="ME",
+    )
+    base = walk_forward_hedge(changes_bp=changes_bp, **common_kwargs)
+
+    midpoint = changes_bp.index[len(changes_bp) // 2]
+    perturbed = changes_bp.copy()
+    # Smash future with a different (but still well-conditioned) signal so
+    # the post-midpoint PCA fit remains numerically stable.
+    rng = np.random.default_rng(42)
+    n_post = (perturbed.index > midpoint).sum()
+    perturbed.loc[perturbed.index > midpoint, :] = (
+        rng.standard_normal((n_post, perturbed.shape[1])) * 100
+    )
+
+    perturbed_out = walk_forward_hedge(changes_bp=perturbed, **common_kwargs)
+
+    # Hedges at every rebalance date < midpoint should be identical.
+    pre_midpoint = base["hedge_history"].index < midpoint
+    pd.testing.assert_frame_equal(
+        base["hedge_history"].loc[pre_midpoint],
+        perturbed_out["hedge_history"].loc[pre_midpoint],
+        check_exact=False,
+    )
+
+
+def test_walk_forward_skips_warmup(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """No P&L should be reported during the warm-up period."""
+    out = walk_forward_hedge(
+        portfolio_holdings={"30Y": 100_000_000},
+        yields=yields_clean,
+        changes_bp=changes_bp,
+        hedge_maturities=["3M", "5Y", "20Y"],
+        pcs_to_hedge=["PC1", "PC2", "PC3"],
+        window_days=252,
+        rebalance_freq="ME",
+    )
+    # First P&L observation must come at least window_days into the sample.
+    first_pnl_loc = changes_bp.index.get_loc(out["pnl"].index[0])
+    assert first_pnl_loc >= 252
+
+
+def test_walk_forward_monthly_has_more_rebalances_than_quarterly(
+    yields_clean: pd.DataFrame, changes_bp: pd.DataFrame
+) -> None:
+    """Higher rebalance frequency = more rebalance dates in the same period."""
+    common = dict(
+        portfolio_holdings={"30Y": 100_000_000},
+        yields=yields_clean,
+        changes_bp=changes_bp,
+        hedge_maturities=["3M", "5Y", "20Y"],
+        pcs_to_hedge=["PC1", "PC2", "PC3"],
+        window_days=252,
+    )
+    monthly = walk_forward_hedge(rebalance_freq="ME", **common)
+    quarterly = walk_forward_hedge(rebalance_freq="QE", **common)
+    assert len(monthly["rebalance_dates"]) > len(quarterly["rebalance_dates"])

@@ -150,12 +150,50 @@ A genuinely surprising side-result: the same "hedge PC1+PC2+PC3" task with diffe
 
 Same number of factors hedged, same factors zeroed, but a 3× difference in residual variance depending on which maturities span the hedge. **Picking the hedge basket is a sub-problem in its own right** — what real risk desks optimize over, not just "how many factors to neutralize." A simple first principle that emerged: spread the instruments across the curve (one short, one belly, one long) rather than clustering them in the belly.
 
-### 5.4 The asymmetry result
+### 5.4 Walk-forward validation (Notebook 12)
 
-The same PCA model that lost money trying to predict PC2 (Notebook 06: Sharpe -0.38) eliminates 96% of variance when used to hedge factor exposures (Notebook 11). Same factors, opposite outcomes — this is the project's headline asymmetry:
+A natural objection to the 96.03% figure is that the hedge ratios were
+constructed using PCA loadings fitted on the *full* 2020-2026 sample,
+which technically uses future data. Notebook 12 addresses this directly
+by running a true walk-forward backtest:
+
+* At each month-end ``t``, fit a fresh PCA on only the trailing 252
+  business days (no future information);
+* Use *those* loadings together with current yields at ``t`` to compute
+  hedge notionals;
+* Apply the hedge from ``t+1`` until the next rebalance.
+
+Results on the same out-of-sample evaluation period (~5 years, 1268
+business days):
+
+| Setup | Variance reduction |
+|-------|---------------------|
+| In-sample (full-period PCA, t=0 hedge held to end) | **96.53%** |
+| **Walk-forward (252d window, monthly rebalance)** | **93.27%** |
+| Walk-forward (504d window, monthly) | 96.67% |
+| Walk-forward (504d window, quarterly) | 96.63% |
+
+The look-ahead premium is **3.26 percentage points** with a 252-day
+window — small enough that the in-sample result was largely valid, and
+large enough that the honest version (93.27%) is the number to quote.
+Either way the conclusion holds: the same PCA factors that couldn't
+be predicted off can be hedged off cleanly, even with no future
+information.
+
+Why this works: visualizing the loadings re-fit at six different
+historical dates shows the Level / Slope / Curvature *shape* is
+essentially constant across the sample. PCA loadings drift slowly
+because the underlying economic mechanisms (monetary policy
+transmission, term premium, supply/demand) are themselves stable —
+which is exactly Litterman & Scheinkman's original observation
+that has held since 1991.
+
+### 5.5 The asymmetry result
+
+The same PCA model that lost money trying to predict PC2 (Notebook 06: Sharpe -0.38) eliminates 93-96% of variance when used to hedge factor exposures (Notebooks 11-12). Same factors, opposite outcomes — this is the project's headline asymmetry:
 
 - **Prediction needs direction** (which way does PC2 go tomorrow?) → can't be answered → naive strategies lose
-- **Hedging needs structure** (how does the curve move when it moves?) → answered by stable loadings → factor-neutralization works
+- **Hedging needs structure** (how does the curve move when it moves?) → answered by stable loadings → factor-neutralization works, in-sample *and* out-of-sample
 
 This matches the message of Litterman & Scheinkman 1991 — its title is "Common Factors Affecting Bond *Returns*," not "Predicting Bond Returns" — and is the cleanest summary of where PCA earns its keep in fixed income.
 
@@ -171,9 +209,9 @@ This matches the message of Litterman & Scheinkman 1991 — its title is "Common
 >
 > Three case studies reinforce the broader lesson that surface labels mislead without context: the COVID emergency cut produced a Bull-Flattener instead of a Bull-Steepener (front end pinned at zero, flight-to-safety in the long end); the 75bp hike of June 2022 produced a Bull-Steepener instead of a Bear-Flattener (WSJ leak two days earlier had priced it in); the first cut of September 2024 produced a pure Steepener despite cutting (Powell's "insurance cut" framing removed recession premium from the long end). The market reacts to the difference between action and expectation, not to action alone.
 >
-> Pivoting from prediction to risk management on the same factors, I built a PCA-based immunization for a $100M long-30Y portfolio. Hedging PC1 alone with a 10Y bond eliminates 85% of the daily P&L variance; adding a 2Y to neutralize PC2 takes it to 90%; adding 3M and 20Y to neutralize PC3 takes it to **96%** — exactly the explained-variance budget that the PCA started with. The same factors that couldn't be predicted off can be hedged off cleanly, which is the message Litterman & Scheinkman put in the paper title: "Common Factors Affecting Bond *Returns*," not "Predicting Bond Returns."
+> Pivoting from prediction to risk management on the same factors, I built a PCA-based immunization for a $100M long-30Y portfolio. Hedging PC1 alone with a 10Y bond eliminates 85% of the daily P&L variance; adding a 2Y to neutralize PC2 takes it to 90%; adding 3M and 20Y to neutralize PC3 takes it to **96%** — exactly the explained-variance budget that the PCA started with. To address the look-ahead concern in that in-sample result, I added a walk-forward backtest that re-fits the PCA monthly on only past data, and the variance reduction stays at **93.27%** — a 3-point gap that confirms the in-sample number wasn't an artifact of using future information. The same factors that couldn't be predicted off can be hedged off cleanly, in-sample *and* out-of-sample, which is the message Litterman & Scheinkman put in the paper title: "Common Factors Affecting Bond *Returns*," not "Predicting Bond Returns."
 >
-> The whole project is reproducible — installable package, 52 unit tests passing in CI, every parquet artifact and figure regenerable from the numbered notebooks.
+> The whole project is reproducible — installable package, 50 unit tests passing in CI, every parquet artifact and figure regenerable from the numbered notebooks.
 
 ---
 
@@ -182,7 +220,8 @@ This matches the message of Litterman & Scheinkman 1991 — its title is "Common
 * **Macro regression**: needs Bloomberg/Refinitiv consensus surprise data to do justice to the question.
 * **Strategy refinement**: the regime classifier is threshold-based. An HMM or a small classifier using cross-asset features (VIX, credit spreads, equity momentum) is the natural next step. Realistic expectation: maybe 0.1-0.3 of additional Sharpe.
 * **Cross-country comparison**: applying the same PCA to German Bunds and looking at PC-level cross-country relationships is the cleanest unfinished thread.
-* **Transaction costs are not in the backtest** — adding 0.25-0.5 bp per trade leg would shift every Sharpe by roughly −0.1 to −0.3 in this data.
+* **Transaction costs are not in the backtest** — adding 0.25-0.5 bp per trade leg would shift every Sharpe by roughly −0.1 to −0.3, and would reduce the walk-forward variance reduction by a few percentage points (monthly rebalance × 4 instruments × ~0.5bp ≈ 2bp/month of friction).
+* **Interest rate swap pricer**: the immunization story currently uses cash bonds only. Building a swap pricer (bootstrap discount curve → forward rates → DV01 → PCA factor exposures) would let the same factor-hedging machinery work on derivatives, which is the natural next extension and what real rates desks operate on.
 
 ---
 

@@ -310,6 +310,117 @@ def daily_pnl_direct(
     return pd.Series(pnl, index=changes_bp.index, name="pnl_direct_dollars")
 
 
+def walk_forward_hedge(
+    portfolio_holdings: dict[str, float],
+    yields: pd.DataFrame,
+    changes_bp: pd.DataFrame,
+    hedge_maturities: list[str],
+    pcs_to_hedge: list[str],
+    window_days: int = 252,
+    rebalance_freq: str = "ME",
+    n_components: int = 3,
+) -> dict:
+    """Walk-forward immunization with rolling-window PCA fits.
+
+    At each rebalance date ``t``:
+
+    1. Fit a fresh ``YieldCurvePCA`` on the last ``window_days`` rows of
+       ``changes_bp`` ending at (and including) ``t`` — *no* future data.
+    2. Build the portfolio at ``yields.loc[t]`` and solve hedge notionals
+       against the locally-fitted PCA.
+    3. Apply that hedge to ``changes_bp`` from ``t + 1`` business day to
+       (and including) the next rebalance date. The strict ``>`` here
+       prevents counting ``changes_bp[t]`` — which is informationally
+       known at close of ``t`` and used for fitting — as out-of-sample
+       P&L.
+
+    Skipping rule: rebalance dates where ``loc < window_days - 1``
+    (not enough history) are dropped silently.
+
+    Args:
+        portfolio_holdings: ``{maturity_label: notional}`` for the
+            portfolio to hedge (rebuilt at each rebalance with current yields).
+        yields: Daily yield curve panel (one row per business day, in %).
+        changes_bp: Daily yield changes in bp, same calendar as ``yields``
+            but starting one row later (because of ``.diff()``).
+        hedge_maturities: Hedge instrument maturity labels.
+        pcs_to_hedge: PC names to neutralize at each rebalance.
+        window_days: Trailing rolling-window length (in business days) for
+            the PCA fit. Default 252 ≈ 1 year.
+        rebalance_freq: pandas resample alias (default ``"ME"`` = month-end).
+            Use ``"W"`` for weekly, ``"QE"`` for quarterly, etc.
+        n_components: PC count for the local PCA fits.
+
+    Returns:
+        Dict with three entries:
+
+        * ``"pnl"`` (``pd.Series``) — out-of-sample daily P&L in dollars,
+          indexed by date. Days during warm-up (before the first valid
+          rebalance) are excluded.
+        * ``"hedge_history"`` (``pd.DataFrame``) — one row per rebalance,
+          columns ``hedge_<maturity>`` for each instrument's notional.
+        * ``"rebalance_dates"`` (``pd.DatetimeIndex``) — actually-used
+          rebalance dates (after warm-up filter).
+    """
+    # Rebalance schedule snapped to business days in yields.index
+    rebal_target = yields.resample(rebalance_freq).last().index
+    rebal_dates = pd.DatetimeIndex([d for d in rebal_target if d in yields.index])
+
+    pnl = pd.Series(np.nan, index=changes_bp.index, name="walk_forward_pnl_dollars")
+    hedge_records: list[dict] = []
+    used_rebal: list[pd.Timestamp] = []
+
+    for i, t in enumerate(rebal_dates):
+        if t not in changes_bp.index:
+            continue
+        loc = changes_bp.index.get_loc(t)
+        if loc < window_days - 1:
+            continue
+
+        # Past-only training window (window_days rows ending at, and
+        # including, t). changes_bp[t] is already in the info set at
+        # close of t, so including it is not look-ahead.
+        train_data = changes_bp.iloc[loc - window_days + 1 : loc + 1]
+
+        pca_local = YieldCurvePCA(n_components=n_components).fit(train_data)
+
+        current_yields = yields.loc[t]
+        portfolio_t = Portfolio.from_holdings(portfolio_holdings, current_yields)
+        hedge_t = solve_hedge(
+            portfolio_t, pca_local, hedge_maturities, current_yields, pcs_to_hedge
+        )
+        combined_t = hedged_portfolio(portfolio_t, hedge_t, current_yields)
+
+        # Apply hedge to changes from t+1 (strict) until next rebalance (inclusive)
+        next_t = (
+            rebal_dates[i + 1]
+            if i + 1 < len(rebal_dates)
+            else changes_bp.index[-1] + pd.Timedelta(days=1)
+        )
+        period_mask = (changes_bp.index > t) & (changes_bp.index <= next_t)
+        period_changes = changes_bp.loc[period_mask]
+        if len(period_changes) > 0:
+            period_pnl = daily_pnl_direct(combined_t, period_changes)
+            pnl.loc[period_changes.index] = period_pnl.values
+
+        hedge_records.append(
+            {"rebalance_date": t, **{f"hedge_{m}": n for m, n in hedge_t.items()}}
+        )
+        used_rebal.append(t)
+
+    hedge_history = (
+        pd.DataFrame(hedge_records).set_index("rebalance_date")
+        if hedge_records
+        else pd.DataFrame()
+    )
+
+    return {
+        "pnl": pnl.dropna(),
+        "hedge_history": hedge_history,
+        "rebalance_dates": pd.DatetimeIndex(used_rebal),
+    }
+
+
 def daily_pnl_via_pcs(
     portfolio: Portfolio,
     pc_scores: pd.DataFrame,
