@@ -118,6 +118,18 @@ class YieldCurvePCA:
         self._check_fitted()
         return self._pca.n_components_
 
+    @property
+    def mean_(self) -> pd.Series:
+        """Per-feature mean used for centering (sklearn convention).
+
+        sklearn's ``PCA.transform`` subtracts this before projecting, so any
+        downstream code that wants to reconstruct *uncentered* data from
+        scores needs to add it back. Used by ``immunization.daily_pnl_via_pcs``
+        to keep the mean (drift) component consistent with the direct P&L.
+        """
+        self._check_fitted()
+        return pd.Series(self._pca.mean_, index=self._columns, name="mean")
+
     # ------------------------------------------------------------------ #
     # Persistence                                                        #
     # ------------------------------------------------------------------ #
