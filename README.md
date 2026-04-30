@@ -129,7 +129,7 @@ PYTHONUTF8=1 jupyter lab
 
 ### Reproducing the analysis end-to-end
 
-The notebooks under `notebooks/` are numbered and meant to run in order. Each one loads its inputs from the parquet files left behind by the previous notebook, so re-running notebook 03 is enough if you only want to re-fit the PCA. To regenerate everything from scratch, delete `data/processed/` and `reports/figures/` first, then run notebooks 01 → 09 in sequence (or run `make notebooks` if a Makefile is present).
+The notebooks under `notebooks/` are numbered and meant to run in order. Each one loads its inputs from the parquet files left behind by the previous notebook, so re-running notebook 03 is enough if you only want to re-fit the PCA. To regenerate everything from scratch, delete `data/processed/` and `reports/figures/` first, then run notebooks 01 → 11 in sequence (or run `make notebooks` if a Makefile is present).
 
 ---
 
@@ -149,7 +149,7 @@ yield-curve-pca/
 │       └── config.py            # Constants (maturities, FRED endpoint, …)
 │
 ├── notebooks/                   # Phase 1 (01-05) + development tasks (06-09)
-├── tests/                       # 27 unit tests (pytest)
+├── tests/                       # 52 unit tests (pytest)
 │
 ├── data/
 │   ├── raw/                     # Raw FRED CSV (gitignored, regenerable)
@@ -262,9 +262,9 @@ For a project-specific reference of the financial and statistical terms used her
 
 詳細は上の英語セクションを参照。要点だけ:
 
-* `src/yield_curve_pca/` — installable パッケージ。loader / preprocessor / pca_analyzer / backtest
-* `notebooks/01-09` — Phase 1(基礎)+ 発展課題(戦略バックテスト + マクロ回帰)
-* `tests/` — pytest ユニットテスト 27 件
+* `src/yield_curve_pca/` — installable パッケージ。loader / preprocessor / pca_analyzer / backtest / immunization
+* `notebooks/01-11` — Phase 1(基礎)+ 発展課題(戦略バックテスト + マクロ回帰 + リスク管理)
+* `tests/` — pytest ユニットテスト 52 件
 * `reports/findings.md` — 面接で5分話せるサマリー
 
 ---
