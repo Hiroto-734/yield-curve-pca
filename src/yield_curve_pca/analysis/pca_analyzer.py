@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Self
 
 import joblib
-import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 
@@ -129,7 +128,7 @@ class YieldCurvePCA:
         joblib.dump({"pca": self._pca, "columns": self._columns}, Path(path))
 
     @classmethod
-    def load(cls, path: str | Path) -> "YieldCurvePCA":
+    def load(cls, path: str | Path) -> YieldCurvePCA:
         """Restore a previously-saved instance."""
         payload = joblib.load(Path(path))
         instance = cls(n_components=payload["pca"].n_components_)
@@ -172,7 +171,7 @@ def fit_pca_from_yields(
         ``(fitted_pca, changes_bp)`` tuple. The DataFrame is returned so
         callers can immediately do downstream things like ``.transform``.
     """
-    from .. data.preprocessor import to_changes_bp
+    from ..data.preprocessor import to_changes_bp
 
     changes_bp = to_changes_bp(yields_clean)
     pca = YieldCurvePCA(n_components=n_components).fit(changes_bp)

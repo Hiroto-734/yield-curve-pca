@@ -2,9 +2,9 @@
 
 **A from-scratch PCA decomposition of the US Treasury yield curve into Level / Slope / Curvature, plus a candid backtest of a PC2 mean-reversion strategy.**
 
+[![Tests](https://github.com/Hiroto-734/yield-curve-pca/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Hiroto-734/yield-curve-pca/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-27%20passing-brightgreen.svg)](tests/)
 
 This project reproduces Litterman & Scheinkman (1991) on the 2020-2026 sample, then pushes further by building and honestly evaluating a systematic strategy on top of the extracted PC2 (Slope) factor.
 
@@ -40,6 +40,7 @@ The whole project is structured to be reproducible from scratch: every parquet a
 * **A naive mean-reversion strategy on PC2 loses money** (Sharpe -0.38 over 2020-2026), and the loss is statistically distinguishable from random-strategy baselines. The strategy bleeds during regime shifts; loss attribution shows |z-score| has correlation -0.55 with daily P&L, meaning **bigger signals correlate with worse trades** — the opposite of the textbook expectation.
 * **Adding a regime classifier flips the sign of the Sharpe.** A simple "ranging vs trending" filter (|60-day cumulative PC2| ≤ 30bp = ranging) restricts trading to 17% of days but takes Sharpe to +0.06. This is still noise-level, but it isolates the one filter that matters: **when** to trade is a bigger lever than **how**.
 * **The theoretical Sharpe ceiling is ~16** (perfect-foresight projection onto PC2). Industry-grade systematic strategies typically realize 0.5-1.5; the mapping from hit rate to Sharpe shows that just 52-54% directional accuracy on a daily PC2 signal would already produce 0.5-1.0.
+* **PC1 reacts to macro releases by ~1.5x.** PC1 std on FOMC / CPI / NFP release days is **22.9 bp vs 14.9 bp** on non-release days. In joint regression, the FOMC dummy is the only feature that survives (β = **−7.24 bp on PC1, p < 0.001**) — confirming PC1 as the macro-policy factor. CPI/NFP proxy surprises don't reach significance because the free-data substitute (deviation from rolling mean) doesn't capture true consensus surprise; comparable studies with Bloomberg consensus typically reach R² of 5-20%.
 
 ---
 
@@ -179,6 +180,7 @@ yield-curve-pca/
 * **素朴な平均回帰戦略は Sharpe -0.38 で負け**。失敗の原因を損失帰属分析で定量化(|z-score| が P&L と相関 -0.55、つまり **強い信号ほど負ける**)。
 * **Regime classifier だけが Sharpe をプラス(+0.06)に**。「いつトレードするか」が「どうトレードするか」より重要。
 * **Sharpe の理論上限は約 16**(perfect foresight)。Production レベルは 0.5-1.0、これに必要な hit rate は約 52-54%。
+* **PC1 はマクロ発表に 1.5 倍反応**: PC1 std がリリース日 22.9 vs 通常日 14.9 bp。Joint regression で **FOMC ダミーのみ有意**(β = -7.24 bp、p<0.001)。CPI/NFP の代理サプライズは無料データの限界で R² < 1%(本物のコンセンサス予想なら 5-20% の見込み)。
 
 ### ハイライトのストーリー(面接5分)
 
@@ -209,3 +211,4 @@ MIT — see [LICENSE](LICENSE).
 
 * Federal Reserve Economic Data ([FRED](https://fred.stlouisfed.org/)) for the raw yield series.
 * Litterman, R. and Scheinkman, J. (1991). *"Common Factors Affecting Bond Returns."* The Journal of Fixed Income, 1(1), 54-61.
+* Developed with assistance from Anthropic's [Claude Code](https://www.anthropic.com/claude-code) — used for code-review dialogue, refactoring suggestions, documentation polish, and as a sounding board while debugging negative results. Final design decisions, financial interpretations, and the "honest negative result" framing are mine; Claude was a fluent reviewer, not the author.

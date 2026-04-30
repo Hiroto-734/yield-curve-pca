@@ -1,0 +1,11 @@
+# Treat notebooks as Python in GitHub's language stats. The actual
+# Python source under src/ should dominate the language bar, since
+# that's where the project's logic lives — notebooks are largely
+# JSON wrappers around base64-encoded plot images, which would
+# otherwise misleadingly inflate "Jupyter Notebook" in the stats.
+*.ipynb linguist-language=Python
+*.ipynb linguist-detectable=true
+
+# Don't count generated artifacts in language stats.
+data/processed/*.parquet linguist-generated=true
+reports/figures/*.png linguist-generated=true
