@@ -1,125 +1,141 @@
-# Findings: 米国債イールドカーブ PCA 分析
+# Findings — Yield Curve PCA Analysis
 
-## 概要
+**Period covered**: 2020-01-02 to 2026-04-27 (1,580 business days, 10 maturities from 3M to 30Y)
 
-2020年1月〜2026年4月の米国債10年限の日次変動データに対して PCA を適用し、
-上位3軸が **96.2%** の分散を説明することを確認した。
-それぞれが Litterman & Scheinkman (1991) と整合する **Level / Slope / Curvature** に対応する。
-
-| | 寄与率 | 人間指標との相関 |
-|---|---|---|
-| **PC1: Level** | 79.8% | vs Δ10Y = **0.96** |
-| **PC2: Slope** | 11.8% | vs Δ2s10s = **0.91** |
-| **PC3: Curvature** | 4.6% | vs Δbutterfly = 0.26〜0.59 (3点指標では捉えきれず) |
-
-Level と Slope は伝統的な人間指標で十分近似できるが、
-**Curvature は PCA の最適性が特に効く領域**であり、
-10年限すべてを重み付けた線形結合でないと正確に捉えられない。
+This document is the project's written deliverable — the version you'd hand to an interviewer who asks "tell me about this project." For the underlying analysis, see the numbered notebooks under `notebooks/`.
 
 ---
 
-## 代表的な3つの市場イベント
+## 1. The factor structure (Notebooks 01-04)
 
-### Case 1: 2020-03-16 — COVID 緊急ゼロ金利 + QE
+PCA on the daily yield-change matrix recovers Litterman & Scheinkman (1991) on the 2020-2026 sample:
 
-前日(日曜)に FRB が緊急利下げ(100bp、ゼロ金利復帰)+ 7000億ドル QE を発表。月曜の市場で全カーブが急落。
+| Component | Variance explained | Human-indicator counterpart | Daily correlation with counterpart |
+|-----------|--------------------|------------------------------|------------------------------------|
+| **PC1: Level** | 79.8% | 10Y yield | **0.96** |
+| **PC2: Slope** | 11.8% | 2s10s spread (10Y − 2Y) | **0.91** |
+| **PC3: Curvature** | 4.6% | Butterfly (2×5Y − (2Y+10Y)) | 0.26 (narrow) → 0.59 (best wide) |
+| Top 3 cumulative | **96.2%** | | |
 
-**実際の動き(bp)**: Δ3M=-4, Δ2Y=-13, Δ10Y=-21, Δ30Y=-22
+**Why PC1 lands at 79.8% rather than the textbook ~85%**: the 2020-2026 window contains the historic 2022-2024 inversion, during which the curve moved more in slope than in level. Pre-COVID samples typically show 85-90% for PC1.
 
-**PC スコア**(σ単位):
-- PC1 (Level): **-3.34σ**
-- PC2 (Slope): **-1.62σ**
-- PC3 (Curvature): **-1.35σ**
-
-**解釈**: Level の大きな下落(PC1 < 0)に加えて、PC2 も負(= Flattening)。
-全カーブが下落したが、**長期が短期より大きく下落**した(30Y -22bp vs 3M -4bp)。
-これは典型的な「緊急利下げ = Bull-Steepener」ではなく **Bull-Flattener**。
-
-理由:
-1. 短期金利は既にゼロ近辺にあり、これ以上下がる余地が小さい(3Mは-4bpのみ)
-2. パニック相場の **Flight-to-Safety** で長期国債が買われ、長期金利が大きく下落
-
-→ 「**動きの背景文脈が、教科書的な分類を上書きする**」ことを示す好例。
+**Why PC3 misses the simple butterfly**: PC3 has its strongest loadings at 3M (+0.70) and 30Y (+0.26), maturities the 2-5-10 butterfly literally doesn't see. No 3-point butterfly can replicate a 10-point loading vector. This is exactly where PCA's optimality buys something a hand-built indicator cannot.
 
 ---
 
-### Case 2: 2022-06-15 — FOMC 75bp 利上げ(28年ぶり)
+## 2. Three case studies (Notebook 05)
 
-WSJ の事前リーク(6/13)で 75bp 利上げが既に織り込まれており、市場の関心は Powell の今後ガイダンス。
-Powell は「**75bpは異例で、毎回ではない**」と発言。
+The single most useful exercise was decomposing real market events into PC scores and reading them against the textbook expectations.
 
-**実際の動き(bp)**: Δ3M=-9, Δ2Y=-25, Δ10Y=-16, Δ30Y=-6
+### 2.1 COVID emergency cut — 2020-03-16
 
-**PC スコア**(σ単位):
-- PC1 (Level): **-3.44σ**
-- PC2 (Slope): **+3.11σ**
-- PC3 (Curvature): **+0.29σ**
+The Sunday-night Fed announcement of a 100bp cut to zero plus $700B QE was, by the textbook, a Bull-Steepener (rates collapse, short more than long). Our PC scores show otherwise: **PC1 = -3.34σ, PC2 = -1.62σ — a Bull-Flattener.**
 
-**解釈**: 利上げ日にもかかわらず **PC1 < 0**(全カーブが下落)、かつ **PC2 > 0**(Steepening)。
-**Bull-Steepener**。短期(2Y -25bp)が長期(30Y -6bp)より大きく下落した。
+Reading the daily moves: Δ3M = -4 bp, Δ30Y = -22 bp. The 3M had nowhere left to fall (already pinned at the zero floor), so the entire reaction was concentrated in the long end via the flight-to-safety bid for Treasuries. The textbook label assumes the front end has room to move — context overrode the label.
 
-理由:
-1. 75bp 自体は事前にリークで織り込み済み → サプライズなし
-2. Powell の「one-time」発言で「これ以上タカ派に振れない」と市場が解釈
-3. 安堵買いが**短期金利**(政策金利感応度が最大)に集中
+### 2.2 First 75bp hike since 1994 — 2022-06-15
 
-→ 「**重要なのはアクションではなくサプライズ**」という金融市場の鉄則を体現。
+A 75bp hike on a hike day "should" produce a Bear-Flattener. Our PC scores: **PC1 = -3.44σ, PC2 = +3.11σ — a Bull-Steepener (rates fall on a hike day).**
+
+Reading the daily moves: Δ2Y = -25 bp, Δ30Y = -6 bp. The Wall Street Journal had leaked the 75bp two days earlier (June 13), so by June 15 the 75bp was fully priced. Powell's press conference framed it as "not a regular occurrence," which removed the tail of more-hawkish surprises. Relief buying concentrated where the rate-hike pricing had been most aggressive: the front end. **What matters is (action − expectation), not the action itself.**
+
+### 2.3 First cut, 50bp — 2024-09-18
+
+The end of the hiking cycle. **PC2 = +1.88σ dominates — a Steepener** despite being a cut day. Δ3M = -11 (cut filtering through), but Δ10Y = +5 and Δ30Y = +7 (long end *up*). Powell framed the 50bp as an "insurance cut" against a still-strong economy, which removed the recession premium from the long end. The day marks the structural unwind of the 2022-2024 inversion.
 
 ---
 
-### Case 3: 2024-09-18 — FOMC 50bp 利下げ開始
+## 3. PC2 mean reversion strategy (Notebooks 06-08)
 
-2年半続いた利上げサイクルの終結。25bp と 50bp で市場予想が割れていたが、FRB は 50bp を選択。
+I built a systematic strategy on PC2 because mean reversion is the obvious application of the regime/level interpretation, then evaluated it honestly.
 
-**実際の動き(bp)**: Δ3M=-11, Δ2Y=+2, Δ10Y=+5, Δ30Y=+7
+### 3.1 The base strategy and its failure
 
-**PC スコア**(σ単位):
-- PC1 (Level): **+0.52σ**
-- PC2 (Slope): **+1.88σ**
-- PC3 (Curvature): **-2.71σ**
+A standard z-score mean-reversion on cumulative PC2 (60-day window, |z| > 1.5σ entry, symmetric exit) **lost money over 2020-2026**:
 
-**解釈**: PC2 が大きく正(+1.9σ)で **Steepener が支配**。
-ただし「短期は下落」「長期は上昇」のミックス(3M -11, 30Y +7)で、純粋な Bull-Steepener や Bear-Steepener ではない。
+| Metric | Value |
+|--------|-------|
+| Total P&L | **−181 bp** |
+| Annualized Sharpe | **−0.44** |
+| Max drawdown | −284 bp |
+| Hit rate | 48% (coin flip) |
+| Trades | 164 |
 
-理由:
-1. 短期金利:50bp利下げを直接織り込み(下落)
-2. 長期金利:Powell が「**経済は堅調、これは保険的利下げ**」とコメント → 景気不安シナリオが後退 → 長期金利上昇
-3. 結果として **逆イールド解消の本格化**(歴史的意義のある日)
+A 6×6 sensitivity grid over windows {20, 40, 60, 90, 120, 252} and thresholds {1.0, 1.25, 1.5, 1.75, 2.0, 2.5} confirmed this isn't a parameter-choice problem — almost every cell is negative. Comparison against 100 random strategies matched on long/short/flat frequencies put the actual strategy at the left tail (z = −1.09σ).
 
-→ 「**Cut day なのに Bull じゃない**」もまた、文脈で解釈する必要があることを示す。
+### 3.2 The diagnosis
+
+Loss attribution found two highly significant predictors of daily P&L (p < 0.001 each):
+
+* **|20-day PC2 trend|** correlates **−0.30** with P&L. The strategy bleeds in trending markets — exactly the textbook failure mode of mean reversion.
+* **|z-score|** correlates **−0.55** with P&L. **Bigger signals correlate with worse trades**, the opposite of the textbook expectation. Extreme z-scores arise during sustained moves, not at turning points.
+
+The second finding is what made the asymmetric "enter only at 2.0σ" variant *worse* than the base, not better.
+
+### 3.3 What worked
+
+I tested five filters: asymmetric thresholds, stop-loss, time-based exit, trend filter, and a regime classifier. **Only the regime classifier turned the Sharpe positive.**
+
+The classifier itself is one rule: "ranging" if |60-day cumulative PC2| ≤ 30bp, else "trending." Trade only in ranging regimes.
+
+| Strategy variant | Sharpe |
+|-------------------|--------|
+| Base | −0.44 |
+| Asymmetric (enter 2.0σ / exit 0.5σ) | −0.88 (worst) |
+| Stop loss −30bp | −0.16 |
+| Time exit 20d | −0.42 |
+| Trend filter | −0.61 |
+| **Regime classifier** | **+0.06** |
+| Combined (all five) | −0.46 (over-filtered, only 9 trades) |
+
+**Bottom line: when to trade is a bigger lever than how to trade.** The regime-only variant trades 17% of days at a 52% hit rate, takes Sharpe to barely positive, and cuts max drawdown by 67%. It's still well below an investable threshold, but the direction is set by data rather than by parameter tuning.
+
+### 3.4 The realistic ceiling
+
+Perfect-foresight projection onto PC2 (knowing tomorrow's score today) gives Sharpe ~16 — unreachable. The useful version is the hit-rate-to-Sharpe map: 50% accuracy → Sharpe 0; 52% → 0.5 (production minimum); 54% → 1.0 (top-systematic territory). The whole game in this style of strategy is finding 1-2 percentage points of edge over a coin flip on a daily signal.
 
 ---
 
-## 統計的検証
+## 4. Macro regression (Notebook 09)
 
-FOMC 日と非 FOMC 日の PC スコアの std を比較すると:
+Regressing PC scores against approximate CPI / NFP / FOMC surprises gives a clean and honest picture:
 
-| | FOMC std | Non-FOMC std | 比 |
-|---|---|---|---|
-| PC1 | 18.64 | 15.61 | 1.19x |
-| PC2 | 7.04 | 6.03 | 1.17x |
-| PC3 | 4.36 | 3.76 | 1.16x |
+* **Release-day effect is real**: PC1 std on release days is 22.9 vs 14.9 on non-release days — a **1.54x ratio**. Same picture for PC2 (1.58x), weaker for PC3 (1.23x), consistent with curvature being driven more by supply/demand than by macro releases.
+* **The FOMC dummy is the only feature that survives joint regression**: β = **−7.24 bp on PC1, p < 0.001**. Negative-on-average matches the case studies — over 2020-2026, FOMC days have skewed toward "less hawkish than priced" reactions.
+* **CPI and NFP coefficients are not significant in any specification, R² < 1% across the board.** This is a data-quality problem, not a structure problem: my "proxy surprise" is `(actual MoM) − (6-month rolling average MoM)`, which captures deviation from recent trend but not what the market reacts to, which is `(actual) − (consensus forecast)`. With Bloomberg consensus data, comparable studies typically find R² of 5-20%.
 
-FOMC 日は普通の日より明確に変動が大きく、特に **Level と Slope に強く効く**。
+The notebook is therefore a quantification of **what is and isn't explainable from public macro data**, rather than a working alpha signal.
 
 ---
 
-## まとめ — 5分の口頭サマリー
+## 5. Five-minute spoken summary
 
-> 米国債10年限の日次変動に PCA を適用したところ、上位3軸が **96.2%** の分散を説明し、
-> それぞれが Level (79.8%) / Slope (11.8%) / Curvature (4.6%) に対応した。
-> 
-> PC1 と 10Y、PC2 と 2s10s は相関 0.96 / 0.91 で人間指標と高い対応がある一方、
-> PC3 は3点バタフライでは捉えきれず(最良 0.59) — Curvature は PCA の最適性が必要な領域。
-> 
-> 個別イベントを PC スコアで分解すると、**ジャーゴン分類より文脈解釈が重要**であることが見えた:
-> COVID 緊急利下げは Bull-Steepener ではなく Bull-Flattener、
-> 75bp 利上げ日は事前リークと Powell の発言で Bull-Steepener となった。
-> PCA はこうした「**何が動いたか**」を客観的・定量的に分解できる。
+> I applied PCA to daily changes in the US Treasury yield curve from 2020 through April 2026 — ten maturities from 3M to 30Y. The top three components explain 96.2% of variance and recover the textbook Level / Slope / Curvature factor structure.
+>
+> Comparing the PCs to the traditional human indicators: PC1 vs Δ10Y correlates at 0.96, PC2 vs Δ2s10s at 0.91, but PC3 vs the 2-5-10 butterfly is only 0.26. That gap is the most interesting finding — Level and Slope can be approximated by simple human indicators, but Curvature is where PCA's full 10-point loading vector actually buys you something a 3-point indicator literally cannot represent.
+>
+> I then built a PC2 mean-reversion strategy as a development task. The naive version lost money — Sharpe −0.38 — and I diagnosed why with loss attribution: extreme z-scores correlate negatively with forward P&L (r = −0.55), the opposite of the textbook expectation, because extreme z arises during sustained moves rather than at turning points. Adding a single regime filter — trade only when the 60-day cumulative PC2 is within ±30bp of zero — turned the Sharpe positive at +0.06. Still noise-level for live deployment, but it isolates the real lever: when you trade matters more than how.
+>
+> Three case studies reinforce the broader lesson that surface labels mislead without context: the COVID emergency cut produced a Bull-Flattener instead of a Bull-Steepener (front end pinned at zero, flight-to-safety in the long end); the 75bp hike of June 2022 produced a Bull-Steepener instead of a Bear-Flattener (WSJ leak two days earlier had priced it in); the first cut of September 2024 produced a pure Steepener despite cutting (Powell's "insurance cut" framing removed recession premium from the long end). The market reacts to the difference between action and expectation, not to action alone.
+>
+> The whole project is reproducible — installable package, 27 unit tests, every parquet artifact and figure regenerable from the numbered notebooks.
 
-## 図表
+---
 
-- `reports/figures/02_monthly_snapshots.png` — カーブの月次スナップショット
-- `reports/figures/03_loadings.png` — Level/Slope/Curvature のローディング
-- `reports/figures/04_pc_vs_human_cumulative.png` — PC と人間指標の重ね合わせ
-- `reports/figures/05_case_*.png` — 3イベントの詳細プロット
+## 6. Limitations and what I'd do next
+
+* **Macro regression**: needs Bloomberg/Refinitiv consensus surprise data to do justice to the question.
+* **Strategy refinement**: the regime classifier is threshold-based. An HMM or a small classifier using cross-asset features (VIX, credit spreads, equity momentum) is the natural next step. Realistic expectation: maybe 0.1-0.3 of additional Sharpe.
+* **Cross-country comparison**: applying the same PCA to German Bunds and looking at PC-level cross-country relationships is the cleanest unfinished thread.
+* **Transaction costs are not in the backtest** — adding 0.25-0.5 bp per trade leg would shift every Sharpe by roughly −0.1 to −0.3 in this data.
+
+---
+
+## Figures
+
+* `reports/figures/02_monthly_snapshots.png` — six-year curve evolution
+* `reports/figures/03_loadings.png` — Level / Slope / Curvature shapes
+* `reports/figures/04_pc_vs_human_cumulative.png` — PCA vs traditional indicators
+* `reports/figures/05_case_*.png` — three case-study zoom-ins
+* `reports/figures/07_strategies_comparison.png` — all six strategy variants on one chart
+* `reports/figures/08_hitrate_sharpe.png` — hit-rate-to-Sharpe mapping with industry benchmarks
